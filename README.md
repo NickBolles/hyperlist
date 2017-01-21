@@ -120,6 +120,8 @@ go beyond the defaults and required options.
 - `scroller` - Specify an element to be in the place of the scroller.
 - `useFragment` - Determines if a fragment is used internally or not, defaults
   to true.
+- `itemsPerRow` - Specify how many items to have in each row. The items are given 
+  a % of width based on how many are in the row (100/ itemsPerRow)
 
 #### Advanced example
 

@@ -1,3 +1,4 @@
+
 (function(f){if(typeof exports==="object"&&typeof module!=="undefined"){module.exports=f()}else if(typeof define==="function"&&define.amd){define([],f)}else{var g;if(typeof window!=="undefined"){g=window}else if(typeof global!=="undefined"){g=global}else if(typeof self!=="undefined"){g=self}else{g=this}g.HyperList = f()}})(function(){var define,module,exports;return (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(_dereq_,module,exports){
 'use strict';
 
@@ -82,19 +83,31 @@ var HyperList = function () {
 
     if (config.reverse) {
       requestAnimationFrame(function () {
-        element.scrollTop = config.total * config.itemHeight;
+        element.scrollTop = config.total / config.itemsPerRow * config.itemHeight;
       });
     }
 
+
+    // The buffer is in vertical pixels, so it should only count rows
+    var maxBuffer;
+    var pastScreenItemsLen;
+    var refreshMaxBuffer = function(screenItemsLen) {
+    	if (screenItemsLen !== pastScreenItemsLen) {
+      	maxBuffer = Math.floor(screenItemsLen / config.itemsPerRow / 2) * config.itemHeight;
+        pastScreenItemsLen = screenItemsLen;
+      }
+    }
+    refreshMaxBuffer(0);
+      
     // Create internal render loop.
     var render = function render() {
       var scrollTop = _this[_getScrollPosition]();
       var screenItemsLen = _this[_screenItemsLen];
-      var maxBuffer = screenItemsLen * config.itemHeight;
+      refreshMaxBuffer(screenItemsLen);
       var lastRepaint = _this[_lastRepaint];
 
       _this[_renderAnimationFrame] = requestAnimationFrame(render);
-
+			
       if (scrollTop === lastRepaint) {
         return;
       } else if (!lastRepaint || Math.abs(scrollTop - lastRepaint) > maxBuffer) {
@@ -118,8 +131,10 @@ var HyperList = function () {
   }, {
     key: 'refresh',
     value: function refresh(element, userProvidedConfig) {
+     // Set the default items per row here, default config is used for translating into % or px
+      userProvidedConfig.itemsPerRow = userProvidedConfig.itemsPerRow || 1;
       Object.assign(this[_config], defaultConfig, userProvidedConfig);
-
+      
       if (!element || element.nodeType !== 1) {
         throw new Error('HyperList requires a valid DOM Node container');
       }
@@ -162,7 +177,7 @@ var HyperList = function () {
       // the user supplied configuration.
       element.setAttribute('style', '\n      width: ' + config.width + ';\n      height: ' + config.height + ';\n      overflow: auto;\n      position: relative;\n      padding: 0px;\n    ');
 
-      var scrollerHeight = config.itemHeight * config.total;
+      var scrollerHeight = config.itemHeight * config.total / config.itemsPerRow;
       var maxElementHeight = this[_maxElementHeight];
 
       if (scrollerHeight > maxElementHeight) {
@@ -180,7 +195,7 @@ var HyperList = function () {
       var elementHeight = element.offsetHeight;
       var resolvedHeight = typeof height === 'string' ? elementHeight : height;
 
-      this[_screenItemsLen] = Math.ceil(resolvedHeight / config.itemHeight);
+      this[_screenItemsLen] = Math.ceil(resolvedHeight / config.itemHeight) * config.itemsPerRow;
       // Cache 4 times the number of items that fit in the container viewport.
       this[_cachedItemsLen] = this[_screenItemsLen] * 3;
 
@@ -200,8 +215,9 @@ var HyperList = function () {
       var config = this[_config];
       var reverse = config.reverse;
       var total = config.total;
-      var item = config.generate(i);
       var itemHeight = config.itemHeight;
+      var itemsPerRow = config.itemsPerRow;      
+      var item = config.generate(i);
 
       if (!item || item.nodeType !== 1) {
         throw new Error('Generator did not return a DOM Node for index: ' + i);
@@ -209,11 +225,16 @@ var HyperList = function () {
 
       var oldClass = item.getAttribute('class') || '';
       item.setAttribute('class', oldClass + ' ' + (config.rowClassName || 'vrow'));
-
-      var offsetTop = i * itemHeight;
+      
+      var row = Math.floor((i-1) / itemsPerRow);
+      var itemInRow = (i - 1) % itemsPerRow
+      var offsetTop = row * itemHeight;
       var top = reverse ? (total - 1) * itemHeight - offsetTop : offsetTop;
-
-      item.setAttribute('style', '\n      ' + (item.style.cssText || '') + '\n      position: absolute;\n      top: ' + top + 'px\n    ');
+      var left = itemInRow  * (100 / itemsPerRow);
+      
+      item.style.position = 'absolute';
+      item.style.top = top + 'px';
+      item.style.left = left + '%';
 
       return item;
     }
@@ -238,10 +259,13 @@ var HyperList = function () {
       var getRow = this[_getRow].bind(this);
       var total = config.total;
       var itemHeight = config.itemHeight;
-      var estFrom = Math.floor(scrollTop / itemHeight) - screenItemsLen;
-      var from = estFrom > total ? total : estFrom < 0 ? 0 : estFrom;
-      var estTo = from + this[_cachedItemsLen];
-      var to = estTo > total ? total : estTo < 0 ? 0 : estTo;
+      var itemsPerRow = config.itemsPerRow;
+      // Get a page before and a page after the current point
+      var estFrom = Math.floor(scrollTop / itemHeight) * itemsPerRow - screenItemsLen;
+      var estTo = estFrom + this[_cachedItemsLen];
+      // After getting the real start and end, constrain it between 0 and total
+      var from = Math.min(total, Math.max(estFrom, 0));
+      var to = Math.min(total, Math.max(estTo, 0))
 
       // Append all the new rows in a document fragment that we will later append
       // to the parent node
